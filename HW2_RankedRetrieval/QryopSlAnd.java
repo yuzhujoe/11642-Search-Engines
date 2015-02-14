@@ -193,24 +193,23 @@ public class QryopSlAnd extends QryopSl {
   }
   
   public QryResult evaluateIndri(RetrievalModel r) throws IOException {
-	System.out.println("evaluate Indri");
 	allocArgPtrs (r);
 	QryResult result = new QryResult ();
   
-    List<ArgPtr> ptrList = new ArrayList<ArgPtr>(this.argPtrs.size());
+	int argSize = this.argPtrs.size();
+    ArgPtr[] ptrArray = new ArgPtr[argSize];
   
-    for (int j = 0; j < this.argPtrs.size(); j++) {
-		ptrList.add(j, this.argPtrs.get(j));
+    for (int j = 0; j < argSize; j++) {
+		ptrArray[j] = this.argPtrs.get(j);
     }
   
-    int curSize = ptrList.size();
+    int curSize = argSize;
     
     while (curSize > 0) {
 		int minDocid = Integer.MAX_VALUE;
 		
 		// loop list of args to find min docid
-		int j = 0;
-		for (ArgPtr curPtr : ptrList) {
+		for (ArgPtr curPtr : ptrArray) {
 			if (curPtr.nextDoc >= curPtr.scoreList.scores.size()) {
 				continue;
 			}
@@ -219,36 +218,36 @@ public class QryopSlAnd extends QryopSl {
 				// set new minDocid
 				minDocid = curDocid;
 			}
-			j++;
 		}
+		
+		if (minDocid == Integer.MAX_VALUE) break;
 		
 		// found the min docid in this round
 		// calculate docScore
-		double docScore = 0;
+		double docScore = 1;
 		
-		for (int i = 0; i < ptrList.size(); i++) {
-			ArgPtr curPtr = ptrList.get(i);
-			if (curPtr.nextDoc >= curPtr.scoreList.scores.size()) {
-				continue;
+		for (int i = 0; i < argSize; i++) {
+			ArgPtr curPtr = ptrArray[i];
+			int curDocid = Integer.MAX_VALUE;
+			if (curPtr.nextDoc < curPtr.scoreList.scores.size()) {
+				curDocid = curPtr.scoreList.getDocid(curPtr.nextDoc);
 			}
-			int curDocid = curPtr.scoreList.getDocid(curPtr.nextDoc);
 			if (curDocid == minDocid) {
 				// get docScore
-				docScore += curPtr.scoreList.getDocidScore(curPtr.nextDoc ++);
-				ptrList.set(i, curPtr);
+				docScore *= curPtr.scoreList.getDocidScore(curPtr.nextDoc ++);
+				ptrArray[i] = curPtr;
 				if (curPtr.nextDoc >= curPtr.scoreList.scores.size()) {
 					curSize --;
 				}
 			} else {
 				// get default score
-				docScore += ((QryopSl)this.args.get(i)).getDefaultScore(r, curDocid);
+				docScore *= ((QryopSl)this.args.get(i)).getDefaultScore(r, minDocid);
 			}
 		}
 		
 		// add min docid to result
-		if (minDocid != Integer.MAX_VALUE) {
-			result.docScores.add (minDocid, docScore);
-		}
+		result.docScores.add (minDocid, Math.pow(docScore, 1 / (double)argSize));
+		
 	}
     
     freeArgPtrs ();
@@ -272,7 +271,7 @@ public class QryopSlAnd extends QryopSl {
     	for (int i = 0; i < qSize; i++) {
     		score *= ((QryopSl)this.args.get(i)).getDefaultScore(r, docid);
     	}
-    	return Math.pow(score, 1/qSize);
+    	return Math.pow(score, 1.0/qSize);
     }
 
     return 0.0;

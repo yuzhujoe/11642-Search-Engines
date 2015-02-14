@@ -12,6 +12,8 @@ import java.io.*;
 import java.util.*;
 
 public class QryopSlScore extends QryopSl {
+  private String field = "body";
+  private int ctf = 0;
 
   /**
    *  Construct a new SCORE operator.  The SCORE operator accepts just
@@ -158,13 +160,27 @@ public class QryopSlScore extends QryopSl {
   	  
   	public QryResult evaluateIndri(RetrievalModel r) throws IOException {
 	    // Evaluate the query argument.
-  		System.err.println("evaluate indri");
 	    QryResult result = args.get(0).evaluate(r);
+	    
+	    double mu, lambda;
+	    mu = r.getParameter("mu");
+	    lambda = r.getParameter("lambda");
+	    
+	    // constants (N, avg_doclen) stored in index
+	    this.field = result.invertedList.field;
+	    this.ctf = result.invertedList.ctf;
+	    DocLengthStore doclengthStore = QryEval.docLenStore;
+	    double mleProb = this.ctf / (double)QryEval.READER.getSumTotalTermFreq(field);
+	    
 	    int df = result.invertedList.df;
 	    
-	    for (int i = 0; i < result.invertedList.df; i++) {
-	        result.docScores.add(result.invertedList.postings.get(i).docid,
-	  			   (float) 1.0);
+	    for (int i = 0; i < df; i++) {
+	    	int tf = result.invertedList.getTf(i);
+	    	int docid = result.invertedList.postings.get(i).docid;
+	    	long doclen = doclengthStore.getDocLength(field, docid);
+	    	double docScore = (1 - lambda) * (tf + mu * mleProb) / (doclen + mu)
+	    			+ lambda * mleProb;
+	    	result.docScores.add(docid, docScore);
 	    }
 	    
 	    if (df > 0)
@@ -184,7 +200,18 @@ public class QryopSlScore extends QryopSl {
   public double getDefaultScore (RetrievalModel r, long docid) throws IOException {
 
     if (r instanceof RetrievalModelIndri) {
-    	
+    	double mu, lambda;
+	    mu = r.getParameter("mu");
+	    lambda = r.getParameter("lambda");
+	    
+	    DocLengthStore doclengthStore = QryEval.docLenStore;
+	    double mleProb = ctf / (double)QryEval.READER.getSumTotalTermFreq(field);
+	    
+    	long doclen = doclengthStore.getDocLength(field, (int)docid);
+    	double docScore = (1 - lambda) * (mu * mleProb) / (doclen + mu) 
+    			+ lambda * mleProb;
+
+	    return docScore;
     }
 
     return 0.0;
